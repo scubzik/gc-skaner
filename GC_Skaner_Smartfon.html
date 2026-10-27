@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0a1b32">
-<title>GC Skaner · Czytnik telefoniczny</title>
+<title>GC Skaner V9 · Czytnik telefoniczny</title>
 <style>
 :root{--bg:#08172b;--surface:#10233a;--card:#132a43;--line:#27435e;--text:#edf7ff;--muted:#91a9bd;--accent:#35ce87;--blue:#479ffd;--red:#fb6873}
 *{box-sizing:border-box}html{font-size:16px}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100dvh}
@@ -26,6 +26,9 @@ video{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
 .big-desc{text-align:center;min-height:40px;color:#b6c8d7;font-size:13px;margin-top:10px}
 .result{border-radius:13px;border:1px solid #3b556b;padding:12px;background:#132a43;min-height:98px}
 .result.success{border-color:#238658;background:#10392a}.result.error{border-color:#9b4550;background:#39222e}.result .label{color:#9bc1d4;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.result strong{display:block;font-size:20px;margin:2px 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.result .detail{font-size:13px;color:#bed4df}
+.work-mode{margin:0 0 12px;border-radius:11px;padding:11px 12px;background:#112e40;border:1px solid #2d6071;color:#c7f9e1;font-size:13px;line-height:1.4}
+.work-mode strong{display:block;font-size:13px;letter-spacing:.03em}.work-mode.assign{background:#382c13;border:2px solid #dcae45;color:#ffe7ad}
+.work-mode .product{font-weight:700;overflow-wrap:anywhere;margin-top:3px}
 .manual{display:flex;gap:8px}.manual input{min-width:0;flex:1;background:#081c31;color:white;border:1px solid #47617b;padding:12px;border-radius:9px;letter-spacing:.02em}.manual button{padding:10px 15px;background:#276abc;color:#fff}
 footer{text-align:center;font-size:11px;color:#748ca3;padding-bottom:16px}
 @media(min-width:700px){main{grid-template-columns:1.2fr 1fr}.wide{grid-column:1/-1}.camera{max-height:50dvh}.fire{height:95px}}
@@ -45,10 +48,11 @@ footer{text-align:center;font-size:11px;color:#748ca3;padding-bottom:16px}
     <div class="cam-tools"><button id="cameraBtn" class="primary" type="button">📷 Uruchom aparat</button><button id="torchBtn" type="button" disabled>☀ Latarka</button></div>
   </section>
   <section class="card">
+    <div id="workMode" class="work-mode" role="status" aria-live="polite"><strong>TRYB INWENTARYZACJI</strong><div>Skanowanie zwiększa stan faktyczny produktu.</div></div>
     <button id="triggerBtn" type="button" class="fire" disabled>◎ SKANUJ</button>
     <div id="scanInstruction" class="big-desc">Połącz telefon i uruchom aparat. Jeden odczyt na jedno naciśnięcie.</div>
     <div id="result" class="result" aria-live="polite"><div class="label">Ostatni odczyt</div><strong>—</strong><div class="detail">Oczekiwanie na pierwszy kod.</div></div><div id="retryBox" class="cam-tools" style="display:none"><button type="button" id="retryBtn" class="primary">↻ Ponów wysyłkę</button><button type="button" id="discardBtn">Odrzuć żądanie</button></div>
-    <p class="tip" id="accepted">Potwierdzone skanowania: 0</p>
+    <p class="tip" id="accepted">Zliczone sztuki: 0 • Przypisane EAN: 0</p>
   </section>
   <section class="card wide"><h2>Wprowadź ręcznie (opcjonalnie)</h2><form id="manualForm" class="manual"><input id="manualInput" autocomplete="off" spellcheck="false" placeholder="EAN / kod produktu" inputmode="text"><button id="manualBtn" type="submit" disabled>Wyślij</button></form><p class="tip">Wysłanie ręczne działa tak samo jak spust. Nowe odczyty są aktywne dopiero po potwierdzeniu z komputera.</p></section>
 </main>
@@ -61,7 +65,8 @@ const $=id=>document.getElementById(id);
 const roomInput=$('room'), video=$('video'), trigger=$('triggerBtn'), resultBox=$('result');
 let peer=null,conn=null,room='',connected=false,handshake=false;
 let stream=null,torch=false,nativeDetector=null,decodeControls=null;
-let armed=false,pending=null,ackTimeout=null,scanTimeout=null,activeTimer=null,accepted=0;
+let armed=false,pending=null,ackTimeout=null,scanTimeout=null,activeTimer=null,accepted=0,assigned=0;
+let scanMode={mode:'count',targetKod:'',productName:'',token:''};
 let audioCtx=null,decodeGeneration=0;
 
 function status(text,kind='wait'){$('status').textContent=text;$('status').className='status'+(kind==='ok'?' ok':kind==='fail'?' fail':'');}
@@ -73,13 +78,32 @@ function paintResult(code,detail,kind=''){
 }
 function buttons(){
   const ready=connected&&handshake;
+  const assign=scanMode.mode==='assign';
+  const modeBox=$('workMode');
+  modeBox.classList.toggle('assign',assign);
+  modeBox.replaceChildren();
+  const title=document.createElement('strong'),description=document.createElement('div');
+  title.textContent=assign?'TRYB: PRZYPISZ EAN':'TRYB: INWENTARYZACJA';
+  description.textContent=assign?'Następny odczyt przypisze kod do produktu (bez zwiększania stanu).':'Każdy odczyt zwiększa stan faktyczny o 1 szt.';
+  modeBox.append(title,description);
+  if(assign){const product=document.createElement('div');product.className='product';product.textContent=`${scanMode.targetKod} • ${scanMode.productName}`;modeBox.appendChild(product);}
   $('retryBox').style.display=pending && pending.tries>=4?'flex':'none';
   trigger.disabled=!ready||Boolean(pending);
   $('manualBtn').disabled=!ready||Boolean(pending);
-  $('scanInstruction').textContent=pending?'Oczekiwanie na potwierdzenie z komputera…':armed?'Celuj kodem kreskowym w ramkę…':ready?'Naciśnij SKANUJ. Dokładnie jeden odczyt na naciśnięcie.':'Najpierw połącz telefon z inwentaryzatorem.';
-  trigger.textContent=armed?'◉ ODCZYTUJĘ…':pending?'⌛ POTWIERDZANIE…':'◎ SKANUJ';
+  $('scanInstruction').textContent=pending?'Oczekiwanie na potwierdzenie z komputera…':armed?'Celuj kodem kreskowym w ramkę…':ready?(assign?'Naciśnij SKANUJ, aby przypisać EAN do wybranego produktu.':'Naciśnij SKANUJ. Jeden odczyt na naciśnięcie.'):'Najpierw połącz telefon z inwentaryzatorem.';
+  trigger.textContent=armed?'◉ ODCZYTUJĘ…':pending?'⌛ POTWIERDZANIE…':assign?'◎ PRZYPISZ EAN':'◎ SKANUJ';
   trigger.classList.toggle('active',armed);
   $('cameraBox').classList.toggle('scanning',armed);
+}
+function applyScanMode(msg){
+  const next=msg.mode==='assign' && msg.targetKod && msg.token
+    ? {mode:'assign',targetKod:String(msg.targetKod),productName:String(msg.productName||''),token:String(msg.token)}
+    : {mode:'count',targetKod:'',productName:'',token:''};
+  const changed=next.mode!==scanMode.mode || next.token!==scanMode.token;
+  scanMode=next;
+  // Spóźniony odczyt nie może trafić do nowo wybranego produktu.
+  if(changed && armed)disarm();
+  buttons();
 }
 function beep(ok=true){
   try{
@@ -114,11 +138,25 @@ function connect(){
     c.on('open',()=>{if(conn!==c)return;connected=true;c.send({type:'hello',room});buttons();});
     c.on('data',msg=>{
       if(conn!==c||!msg||typeof msg!=='object')return;
-      if(msg.type==='ready'){handshake=true;status('POŁĄCZONY','ok');info('Połączono z DualMagInvent. Po każdym skanowaniu komputer odeśle potwierdzenie.');if(pending)sendPending();buttons();return;}
+      if(msg.type==='ready'){
+        handshake=true;applyScanMode(msg);status('POŁĄCZONY','ok');
+        info('Połączono z DualMagInvent. Komputer automatycznie przełącza tryb skanowania i przypisywania EAN.');
+        if(pending)sendPending();buttons();return;
+      }
+      if(msg.type==='mode'){applyScanMode(msg);return;}
       if(msg.type==='ack'&&pending&&msg.id===pending.id){
         clearTimeout(ackTimeout);const code=pending.ean;pending=null;
-        if(msg.ok){accepted++;$('accepted').textContent='Potwierdzone skanowania: '+accepted;paintResult(code,'✓ '+(msg.nazwa||msg.kod||'Produkt')+' • stan faktyczny: '+msg.ilosc,'success');beep(true);}
-        else{paintResult(code,'✕ '+(msg.reason||'Nie odnaleziono produktu'),'error');beep(false);}
+        if(msg.ok){
+          if(msg.action==='assign'){
+            assigned++;
+            paintResult(code,'✓ EAN przypisany do '+(msg.kod||'produktu')+'. Stan faktyczny bez zmian.','success');
+          }else{
+            accepted++;
+            paintResult(code,'✓ '+(msg.nazwa||msg.kod||'Produkt')+' • stan faktyczny: '+msg.ilosc,'success');
+          }
+          $('accepted').textContent=`Zliczone sztuki: ${accepted} • Przypisane EAN: ${assigned}`;
+          beep(true);
+        }else{paintResult(code,'✕ '+(msg.reason||'Operacja odrzucona'),'error');beep(false);}
         buttons();
       }
     });
@@ -220,7 +258,8 @@ function sendScan(value){
   if(!code||code.length>80){paintResult(code,'Nieprawidłowy kod.','error');return;}
   if(!handshake||!connected||pending){paintResult(code,'Brak połączenia z komputerem.','error');return;}
   const id=(crypto.randomUUID?crypto.randomUUID():(Date.now()+'-'+Math.random().toString(36).slice(2))).replace(/[^a-zA-Z0-9_-]/g,'');
-  pending={id,ean:code,tries:0};
+  // Zachowujemy tryb z chwili naciśnięcia spustu, także przy ponawianiu żądania.
+  pending={id,ean:code,tries:0,mode:scanMode.mode,targetKod:scanMode.targetKod,token:scanMode.token};
   paintResult(code,'Wysłano do komputera. Oczekiwanie na potwierdzenie…');
   buttons();sendPending();
 }
@@ -235,7 +274,8 @@ function sendPending(){
     return;
   }
   pending.tries++;
-  conn.send({type:'scan',id:pending.id,ean:pending.ean});
+  conn.send({type:'scan',id:pending.id,ean:pending.ean,
+    mode:pending.mode,targetKod:pending.targetKod,token:pending.token});
   ackTimeout=setTimeout(sendPending,2500);
 }
 $('retryBtn').addEventListener('click',()=>{if(pending&&connected&&handshake){pending.tries=0;buttons();sendPending();}});
