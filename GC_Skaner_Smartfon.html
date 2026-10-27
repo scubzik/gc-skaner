@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a1b32">
+<title>GC Skaner · Czytnik telefoniczny</title>
+<style>
+:root{--bg:#08172b;--surface:#10233a;--card:#132a43;--line:#27435e;--text:#edf7ff;--muted:#91a9bd;--accent:#35ce87;--blue:#479ffd;--red:#fb6873}
+*{box-sizing:border-box}html{font-size:16px}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100dvh}
+button,input{font:inherit}button{cursor:pointer;touch-action:manipulation;border:0;border-radius:12px;font-weight:750}button:disabled{opacity:.47;cursor:default}
+header{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:16px 16px 12px;background:#0c1c30}
+h1{font-size:17px;line-height:1.1;letter-spacing:-.35px;margin:0}header small{color:var(--muted);font-size:11px}
+.status{padding:8px 11px;border:1px solid var(--line);color:#f9d98e;background:#2a2b35;border-radius:50px;font-size:12px;font-weight:800;white-space:nowrap}.status.ok{color:#98f7be;background:#163d2b;border-color:#236341}.status.fail{color:#ffb0b5;background:#432734;border-color:#754151}
+main{max-width:760px;margin:auto;padding:12px 13px calc(20px + env(safe-area-inset-bottom));display:grid;gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:13px}
+.card h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#b6cad9;margin:0 0 8px}
+.pair-row{display:flex;gap:8px;align-items:stretch}.pair-row input{flex:1;min-width:0;background:#091d32;border:1px solid #42607e;color:#fff;padding:12px 10px;border-radius:10px;font-size:13px;outline:none}.pair-row input:focus{border-color:#63b4fa}.pair-row button{background:#367ada;color:white;padding:10px 14px}
+.tip{font-size:12px;color:#a5b9c9;margin:8px 0 0}
+.camera{position:relative;overflow:hidden;border:1px solid #2e465f;background:#030b14;aspect-ratio:4/3;border-radius:15px;display:grid;place-items:center;max-height:51dvh;min-height:190px}
+video{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
+.camera .idle{color:#d2e3f0;text-align:center;padding:15px;z-index:2;line-height:1.6;background:#0d1d2e9c;border-radius:12px}
+.camera .aim{position:relative;width:min(84%,370px);height:130px;border:3px solid #6faed5;border-radius:14px;z-index:2;opacity:.45;box-shadow:0 0 0 100vmax #050f1a29;pointer-events:none}.camera .aim:before,.camera .aim:after{content:"";position:absolute;left:10%;right:10%;height:1px;background:#66d996;top:50%}.camera.scanning .aim{border-color:#4de9a3;opacity:1}.camera.scanning .aim:before{height:2px;box-shadow:0 0 12px #59ffc2}
+.cam-tools{display:flex;gap:8px;margin-top:10px}.cam-tools button{background:#203c59;color:#dbeafa;min-height:42px;flex:1}.cam-tools button.primary{background:#215fa9}
+.fire{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:88px;background:var(--accent);color:#072e1d;border-radius:17px;font-size:25px;font-weight:950;box-shadow:0 5px 0 #1f8d61;letter-spacing:.02em}.fire:active{transform:translateY(3px);box-shadow:0 2px 0 #1f8d61}.fire.active{background:#f4c44e;color:#362b00;box-shadow:0 5px 0 #c29927}
+.big-desc{text-align:center;min-height:40px;color:#b6c8d7;font-size:13px;margin-top:10px}
+.result{border-radius:13px;border:1px solid #3b556b;padding:12px;background:#132a43;min-height:98px}
+.result.success{border-color:#238658;background:#10392a}.result.error{border-color:#9b4550;background:#39222e}.result .label{color:#9bc1d4;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.result strong{display:block;font-size:20px;margin:2px 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.result .detail{font-size:13px;color:#bed4df}
+.manual{display:flex;gap:8px}.manual input{min-width:0;flex:1;background:#081c31;color:white;border:1px solid #47617b;padding:12px;border-radius:9px;letter-spacing:.02em}.manual button{padding:10px 15px;background:#276abc;color:#fff}
+footer{text-align:center;font-size:11px;color:#748ca3;padding-bottom:16px}
+@media(min-width:700px){main{grid-template-columns:1.2fr 1fr}.wide{grid-column:1/-1}.camera{max-height:50dvh}.fire{height:95px}}
+@media(orientation:landscape) and (max-height:480px){main{grid-template-columns:1.15fr 1fr}.camera{max-height:58vh;min-height:160px}.fire{min-height:70px}}
+</style>
+</head>
+<body>
+<header><div><h1>GC <span style="color:#49db9d">Skaner</span></h1><small>Bezprzewodowy czytnik · DualMagInvent</small></div><div id="status" class="status">ROZŁĄCZONY</div></header>
+<main>
+  <section class="card wide">
+    <h2>Połączenie z inwentaryzatorem</h2>
+    <div class="pair-row"><input id="room" autocomplete="off" spellcheck="false" placeholder="Wklej kod sesji z komputera"><button id="connectBtn" type="button">Połącz</button></div>
+    <p class="tip" id="connectInfo">Najłatwiej: zeskanuj aparatem systemowym QR wyświetlony w DualMagInvent. Link sam wypełni kod sesji.</p>
+  </section>
+  <section class="card" style="padding:10px">
+    <div id="cameraBox" class="camera"><video id="video" playsinline muted autoplay></video><div id="cameraIdle" class="idle">Włącz aparat, a potem naciskaj<br><b>SKANUJ</b> dla każdego produktu.</div><div class="aim"></div></div>
+    <div class="cam-tools"><button id="cameraBtn" class="primary" type="button">📷 Uruchom aparat</button><button id="torchBtn" type="button" disabled>☀ Latarka</button></div>
+  </section>
+  <section class="card">
+    <button id="triggerBtn" type="button" class="fire" disabled>◎ SKANUJ</button>
+    <div id="scanInstruction" class="big-desc">Połącz telefon i uruchom aparat. Jeden odczyt na jedno naciśnięcie.</div>
+    <div id="result" class="result" aria-live="polite"><div class="label">Ostatni odczyt</div><strong>—</strong><div class="detail">Oczekiwanie na pierwszy kod.</div></div><div id="retryBox" class="cam-tools" style="display:none"><button type="button" id="retryBtn" class="primary">↻ Ponów wysyłkę</button><button type="button" id="discardBtn">Odrzuć żądanie</button></div>
+    <p class="tip" id="accepted">Potwierdzone skanowania: 0</p>
+  </section>
+  <section class="card wide"><h2>Wprowadź ręcznie (opcjonalnie)</h2><form id="manualForm" class="manual"><input id="manualInput" autocomplete="off" spellcheck="false" placeholder="EAN / kod produktu" inputmode="text"><button id="manualBtn" type="submit" disabled>Wyślij</button></form><p class="tip">Wysłanie ręczne działa tak samo jak spust. Nowe odczyty są aktywne dopiero po potwierdzeniu z komputera.</p></section>
+</main>
+<footer>GC Skaner · aparat i kod EAN przetwarzane lokalnie · wymagane HTTPS dla kamery</footer>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/umd/zxing-browser.min.js"></script>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const roomInput=$('room'), video=$('video'), trigger=$('triggerBtn'), resultBox=$('result');
+let peer=null,conn=null,room='',connected=false,handshake=false;
+let stream=null,torch=false,nativeDetector=null,decodeControls=null;
+let armed=false,pending=null,ackTimeout=null,scanTimeout=null,activeTimer=null,accepted=0;
+let audioCtx=null,decodeGeneration=0;
+
+function status(text,kind='wait'){$('status').textContent=text;$('status').className='status'+(kind==='ok'?' ok':kind==='fail'?' fail':'');}
+function info(text){$('connectInfo').textContent=text;}
+function paintResult(code,detail,kind=''){
+  resultBox.className='result'+(kind==='success'?' success':kind==='error'?' error':'');
+  resultBox.querySelector('strong').textContent=code||'—';
+  resultBox.querySelector('.detail').textContent=detail;
+}
+function buttons(){
+  const ready=connected&&handshake;
+  $('retryBox').style.display=pending && pending.tries>=4?'flex':'none';
+  trigger.disabled=!ready||Boolean(pending);
+  $('manualBtn').disabled=!ready||Boolean(pending);
+  $('scanInstruction').textContent=pending?'Oczekiwanie na potwierdzenie z komputera…':armed?'Celuj kodem kreskowym w ramkę…':ready?'Naciśnij SKANUJ. Dokładnie jeden odczyt na naciśnięcie.':'Najpierw połącz telefon z inwentaryzatorem.';
+  trigger.textContent=armed?'◉ ODCZYTUJĘ…':pending?'⌛ POTWIERDZANIE…':'◎ SKANUJ';
+  trigger.classList.toggle('active',armed);
+  $('cameraBox').classList.toggle('scanning',armed);
+}
+function beep(ok=true){
+  try{
+    if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended')audioCtx.resume();
+    const o=audioCtx.createOscillator(),gain=audioCtx.createGain();o.connect(gain);gain.connect(audioCtx.destination);
+    o.type=ok?'sine':'square';o.frequency.setValueAtTime(ok?1160:340,audioCtx.currentTime);
+    gain.gain.setValueAtTime(.0001,audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.14,audioCtx.currentTime+.014);
+    gain.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+(ok?.115:.28));
+    o.start();o.stop(audioCtx.currentTime+(ok?.14:.30));
+  }catch(_){}
+  if(navigator.vibrate)navigator.vibrate(ok?70:[100,60,100]);
+}
+function clearConnection(){
+  handshake=false;connected=false;
+  if(conn){try{conn.close();}catch(_){}conn=null;}
+  if(peer){try{peer.destroy();}catch(_){}peer=null;}
+  disarm();buttons();
+}
+function connect(){
+  const value=roomInput.value.trim();
+  if(!/^gc-[0-9a-f]{36}$/.test(value)){info('Błędny identyfikator. Skopiuj pełny kod z okna DualMagInvent albo otwórz link QR.');return;}
+  if(typeof Peer==='undefined'){info('Nie załadowano modułu połączeń PeerJS. Sprawdź internet.');return;}
+  clearConnection();room=value;
+  status('ŁĄCZENIE…');info('Nawiązywanie bezpośredniego połączenia z komputerem…');
+  peer=new Peer(undefined,{debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'}]}});
+  const p=peer;
+  p.on('open',()=>{
+    if(peer!==p)return;
+    const c=p.connect(room,{serialization:'json',reliable:true});conn=c;
+    c.on('open',()=>{if(conn!==c)return;connected=true;c.send({type:'hello',room});buttons();});
+    c.on('data',msg=>{
+      if(conn!==c||!msg||typeof msg!=='object')return;
+      if(msg.type==='ready'){handshake=true;status('POŁĄCZONY','ok');info('Połączono z DualMagInvent. Po każdym skanowaniu komputer odeśle potwierdzenie.');if(pending)sendPending();buttons();return;}
+      if(msg.type==='ack'&&pending&&msg.id===pending.id){
+        clearTimeout(ackTimeout);const code=pending.ean;pending=null;
+        if(msg.ok){accepted++;$('accepted').textContent='Potwierdzone skanowania: '+accepted;paintResult(code,'✓ '+(msg.nazwa||msg.kod||'Produkt')+' • stan faktyczny: '+msg.ilosc,'success');beep(true);}
+        else{paintResult(code,'✕ '+(msg.reason||'Nie odnaleziono produktu'),'error');beep(false);}
+        buttons();
+      }
+    });
+    c.on('close',()=>{if(conn===c){connected=false;handshake=false;status('ROZŁĄCZONY','fail');info('Połączenie przerwane. Połącz ponownie; niepotwierdzony skan pozostaje do wznowienia.');disarm();buttons();}});
+    c.on('error',e=>{info('Błąd kanału: '+(e?.message||'nieznany'));status('BŁĄD','fail');});
+  });
+  p.on('error',e=>{if(peer===p){status('BŁĄD','fail');info('Nie udało się połączyć: '+(e?.message||e?.type||'brak połączenia')+'. Sprawdź sesję i zaporę sieciową.');}});
+  p.on('disconnected',()=>{if(peer===p)info('Utracono kontakt z serwerem zestawiania połączeń.');});
+}
+$('connectBtn').addEventListener('click',connect);
+roomInput.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();connect();}});
+
+async function startCamera(){
+  if(stream){stopCamera();return;}
+  if(!navigator.mediaDevices?.getUserMedia){paintResult('Brak aparatu','Dostęp do aparatu wymaga HTTPS i zgody w przeglądarce.','error');return;}
+  try{
+    // Wywołane przez dotknięcie: odblokowuje sygnał dźwiękowy na telefonie.
+    if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    audioCtx.resume().catch(()=>{});
+    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+    video.srcObject=stream;await video.play();$('cameraIdle').style.display='none';
+    $('cameraBtn').textContent='⏹ Wyłącz aparat';$('cameraBtn').classList.remove('primary');
+    const track=stream.getVideoTracks()[0];
+    let capabilities={};try{capabilities=track.getCapabilities()||{};}catch(_){}
+    $('torchBtn').disabled=!capabilities.torch;
+    nativeDetector=null;
+    if('BarcodeDetector' in window){
+      try{
+        const supported=await BarcodeDetector.getSupportedFormats();
+        const types=['ean_13','upc_a','ean_8','code_128','itf','code_39','upc_e'].filter(t=>supported.includes(t));
+        if(types.length)nativeDetector=new BarcodeDetector({formats:types});
+      }catch(_){}
+    }
+    paintResult('Aparat gotowy',nativeDetector?'Odczyt przez natywny moduł kamery.':'Odczyt kodów przez ZXing.');
+    buttons();
+  }catch(e){stream=null;paintResult('Nie włączono aparatu',(e?.message||'Odmowa dostępu')+'. Sprawdź uprawnienia i HTTPS.','error');}
+}
+function stopCamera(){
+  disarm();torch=false;
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  video.srcObject=null;$('cameraIdle').style.display='';
+  $('torchBtn').disabled=true;$('torchBtn').textContent='☀ Latarka';
+  $('cameraBtn').textContent='📷 Uruchom aparat';$('cameraBtn').classList.add('primary');
+  buttons();
+}
+$('cameraBtn').addEventListener('click',startCamera);
+$('torchBtn').addEventListener('click',async()=>{
+  if(!stream)return;
+  const track=stream.getVideoTracks()[0];
+  try{torch=!torch;await track.applyConstraints({advanced:[{torch}]});$('torchBtn').textContent=torch?'☀ Wyłącz światło':'☀ Latarka';}
+  catch(e){torch=false;$('torchBtn').textContent='☀ Latarka';}
+});
+function disarm(){
+  armed=false;decodeGeneration++;clearTimeout(scanTimeout);clearTimeout(activeTimer);
+  if(decodeControls){try{decodeControls.stop();}catch(_){}decodeControls=null;}
+  buttons();
+}
+async function nativeLoop(generation){
+  if(!armed||generation!==decodeGeneration||!stream)return;
+  try{
+    const detections=await nativeDetector.detect(video);
+    if(!armed||generation!==decodeGeneration)return;
+    const code=detections.map(x=>x.rawValue).find(Boolean);
+    if(code){capture(code);return;}
+  }catch(e){/* skip frames while camera is focusing */}
+  activeTimer=setTimeout(()=>nativeLoop(generation),125);
+}
+async function startScan(){
+  if(!connected||!handshake||pending)return;
+  if(armed)return;
+  if(!stream){await startCamera();if(!stream)return;}
+  // Jeden odczyt na każde naciśnięcie: rozbrojenie natychmiast po wykryciu kodu.
+  armed=true;const gen=++decodeGeneration;buttons();
+  scanTimeout=setTimeout(()=>{if(armed&&gen===decodeGeneration){disarm();paintResult('Brak odczytu','Kod nie został rozpoznany w ciągu 9 sekund. Naciśnij SKANUJ ponownie.','error');}},9000);
+  if(nativeDetector){nativeLoop(gen);return;}
+  if(typeof ZXingBrowser==='undefined'){
+    disarm();paintResult('Brak dekodera','Nie załadowano ZXing. Sprawdź połączenie internetowe.','error');return;
+  }
+  try{
+    const reader=new ZXingBrowser.BrowserMultiFormatReader();
+    const controls=await reader.decodeFromVideoElement(video,(result,error,ctrl)=>{
+      if(!armed||gen!==decodeGeneration||!result)return;
+      capture(result.getText());
+      try{ctrl.stop();}catch(_){}
+    });
+    if(gen!==decodeGeneration||!armed){controls.stop();return;}
+    decodeControls=controls;
+  }catch(e){
+    if(gen!==decodeGeneration)return;
+    disarm();paintResult('Błąd rozpoznawania',e?.message||'Nie można uruchomić ZXing.','error');
+  }
+}
+function capture(code){
+  if(!armed)return;
+  disarm();sendScan(code);
+}
+function sendScan(value){
+  const code=String(value||'').normalize('NFKC').replace(/\s+/g,'').trim();
+  if(!code||code.length>80){paintResult(code,'Nieprawidłowy kod.','error');return;}
+  if(!handshake||!connected||pending){paintResult(code,'Brak połączenia z komputerem.','error');return;}
+  const id=(crypto.randomUUID?crypto.randomUUID():(Date.now()+'-'+Math.random().toString(36).slice(2))).replace(/[^a-zA-Z0-9_-]/g,'');
+  pending={id,ean:code,tries:0};
+  paintResult(code,'Wysłano do komputera. Oczekiwanie na potwierdzenie…');
+  buttons();sendPending();
+}
+function sendPending(){
+  clearTimeout(ackTimeout);
+  if(!pending||!conn?.open||!handshake)return;
+  if(pending.tries>=4){
+    // Nie wysyłamy następnego automatycznego skanu, aby nie pomylić niepotwierdzonego z nowym.
+    paintResult(pending.ean,'Nie ma potwierdzenia. Sprawdź stan na komputerze; możesz ponowić wysyłkę tego samego żądania przyciskiem poniżej.','error');
+    $('scanInstruction').textContent='Brak potwierdzenia. Najpierw sprawdź stan na komputerze.';
+    buttons();
+    return;
+  }
+  pending.tries++;
+  conn.send({type:'scan',id:pending.id,ean:pending.ean});
+  ackTimeout=setTimeout(sendPending,2500);
+}
+$('retryBtn').addEventListener('click',()=>{if(pending&&connected&&handshake){pending.tries=0;buttons();sendPending();}});
+$('discardBtn').addEventListener('click',()=>{
+ if(!pending)return;
+ if(!confirm('Sprawdź najpierw inwentaryzator na komputerze: kod mógł zostać zaliczony mimo braku potwierdzenia. Odrzucić to żądanie bez ponownej wysyłki?'))return;
+ clearTimeout(ackTimeout);pending=null;buttons();paintResult('Odrzucono','Nie wysłano nowego żądania.','error');
+});
+trigger.addEventListener('click',startScan);
+$('manualForm').addEventListener('submit',e=>{
+  e.preventDefault();if(pending||!handshake)return;
+  const code=$('manualInput').value;
+  $('manualInput').value='';sendScan(code);
+});
+function readHash(){
+  const match=location.hash.match(/(?:^#|&)room=([^&]+)/);
+  if(match){
+    try{roomInput.value=decodeURIComponent(match[1]);}catch(_){}
+    connect();
+  }
+}
+window.addEventListener('pagehide',()=>{stopCamera();clearConnection();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&armed)disarm();});
+window.addEventListener('load',readHash);
+</script>
+</body>
+</html>
